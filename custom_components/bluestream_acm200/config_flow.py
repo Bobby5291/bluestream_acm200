@@ -12,6 +12,7 @@ from .const import (
     CONF_NUM_OUTPUTS,
     DEFAULT_NUM_INPUTS,
     DEFAULT_NUM_OUTPUTS,
+    CONF_INPUT_NAMES,
 )
 
 
@@ -26,7 +27,6 @@ class ACM200ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = str(user_input[CONF_HOST]).strip()
             port = int(user_input.get(CONF_PORT, DEFAULT_PORT))
 
-            # Make the config entry uniquely identifiable in HA, so device registry works properly.
             await self.async_set_unique_id(f"{host}:{port}")
             self._abort_if_unique_id_configured()
 
@@ -49,4 +49,50 @@ class ACM200ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=data_schema,
             errors={},
+        )
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        """Return the options flow handler."""
+        return ACM200OptionsFlowHandler(config_entry)
+
+
+class ACM200OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options for ACM200 (e.g. friendly input names)."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._entry = config_entry
+
+    async def async_step_init(self, user_input: dict | None = None):
+        """Manage the options."""
+        num_inputs: int = self._entry.data.get(CONF_NUM_INPUTS, DEFAULT_NUM_INPUTS)
+
+        # Existing saved names: {"1": "Apple TV", "2": "Sky Q", ...}
+        existing: dict = dict(self._entry.options.get(CONF_INPUT_NAMES, {}))
+
+        if user_input is not None:
+            new_names: dict[str, str] = {}
+
+            for in_id in range(1, num_inputs + 1):
+                key = f"input_{in_id}_name"
+                raw = str(user_input.get(key, "")).strip()
+                if raw:
+                    new_names[str(in_id)] = raw
+
+            return self.async_create_entry(
+                title="",
+                data={CONF_INPUT_NAMES: new_names},
+            )
+
+        # Build a dynamic form with one field per input
+        schema_fields = {}
+        for in_id in range(1, num_inputs + 1):
+            default = existing.get(str(in_id), "")
+            schema_fields[vol.Optional(f"input_{in_id}_name", default=default)] = str
+
+        data_schema = vol.Schema(schema_fields)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=data_schema,
         )
