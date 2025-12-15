@@ -57,3 +57,4 @@ class ACM200RoutingOverviewSensor(CoordinatorEntity[ACM200Coordinator], SensorEn
         data: Dict[int, int] = self.coordinator.data or {}
         return {f"output_{out_id:03d}": data.get(out_id) for out_id in range(1, self._num_outputs + 1)}
 
+
