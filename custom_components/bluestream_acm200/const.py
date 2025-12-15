@@ -1,5 +1,3 @@
-y
-
 from __future__ import annotations
 
 DOMAIN = "bluestream_acm200"
@@ -12,8 +10,9 @@ CONF_NUM_OUTPUTS = "num_outputs"
 
 CONF_POLL_INTERVAL = "poll_interval"
 
-# NEW
-CONF_INPUT_NAMES = "input_names"
+# Friendly naming
+CONF_INPUT_NAMES = "input_names"     # mapping: {"1": "Apple TV", ...}
+CONF_OUTPUT_NAMES = "output_names"   # mapping: {"1": "Bedroom TV", ...}
 
 DEFAULT_PORT = 23
 DEFAULT_NUM_INPUTS = 4
