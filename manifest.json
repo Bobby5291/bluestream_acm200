@@ -1,0 +1,12 @@
+{
+  "domain": "bluestream_acm200",
+  "name": "Blustream ACM200",
+  "version": "1.0.0",
+  "documentation": "https://github.com/YOURNAME/bluestream_acm200",
+  "issue_tracker": "https://github.com/YOURNAME/bluestream_acm200/issues",
+  "codeowners": ["@yourgithubusername"],
+  "requirements": [],
+  "dependencies": [],
+  "config_flow": true,
+  "iot_class": "local_polling"
+}
