@@ -1,162 +1,74 @@
-from __future__ import annotations
+ffrom __future__ import annotations
 
 import asyncio
 import logging
-import re
-from dataclasses import dataclass
 from typing import Dict, Optional
 
 _LOGGER = logging.getLogger(__name__)
 
-PROMPT_RE = re.compile(r"\bACM200>\s*$", re.IGNORECASE)
-
-# Common patterns seen across similar firmwares for routing info
-ROUTE_RE_LIST = [
-    # e.g. "OUT 001 ... FROM IN 002"
-    re.compile(
-        r"\bOUT(?:PUT)?\s*0*([0-9]{1,3}).*?\b(?:FROM|FR)\b.*?\bIN(?:PUT)?\s*0*([0-9]{1,3}|AUTO)\b",
-        re.IGNORECASE,
-    ),
-    # e.g. "Output 001 From Input 002"
-    re.compile(
-        r"\bOUTPUT\s*0*([0-9]{1,3}).*?\bFROM\b.*?\bINPUT\s*0*([0-9]{1,3}|AUTO)\b",
-        re.IGNORECASE,
-    ),
-]
-
-
-@dataclass(frozen=True)
-class ACM200ConnectionInfo:
-    host: str
-    port: int
-
 
 class ACM200Client:
-    """Telnet-style client for ACM200 Terminal Control."""
+    """Very small async client to talk to ACM200 (telnet-like)."""
 
-    def __init__(self, host: str, port: int) -> None:
-        self._conn = ACM200ConnectionInfo(host=host, port=port)
+    def __init__(self, host: str, port: int = 23) -> None:
+        self._host = host
+        self._port = port
         self._lock = asyncio.Lock()
 
-    async def _open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        reader, writer = await asyncio.open_connection(self._conn.host, self._conn.port)
-        return reader, writer
-
-    async def _read_until_prompt(
-        self,
-        reader: asyncio.StreamReader,
-        *,
-        timeout: float = 2.0,
-        max_bytes: int = 64_000,
-    ) -> str:
-        """Read until ACM200 prompt appears or timeout; returns collected text."""
-        buf = bytearray()
-        try:
-            while len(buf) < max_bytes:
-                chunk = await asyncio.wait_for(reader.read(1024), timeout=timeout)
-                if not chunk:
-                    break
-                buf.extend(chunk)
-                try:
-                    text = buf.decode(errors="ignore")
-                except Exception:
-                    text = ""
-                if PROMPT_RE.search(text):
-                    break
-        except asyncio.TimeoutError:
-            # Normal if device returns partial output; we still return what we got.
-            pass
-
-        return buf.decode(errors="ignore")
-
-    async def _send_and_read(
-        self,
-        command: str,
-        *,
-        read_timeout: float = 2.0,
-    ) -> str:
-        """Send a command and read response until prompt."""
+    async def _send_command(self, command: str, expect_response: bool = True, timeout: float = 5.0) -> str:
+        """Send a command and optionally read response."""
         async with self._lock:
-            reader, writer = await self._open()
+            reader: Optional[asyncio.StreamReader] = None
+            writer: Optional[asyncio.StreamWriter] = None
             try:
-                # Consume banner (if any)
-                await self._read_until_prompt(reader, timeout=0.8)
-
-                writer.write((command.strip() + "\r\n").encode())
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(self._host, self._port),
+                    timeout=timeout,
+                )
+                msg = command.strip() + "\r\n"
+                writer.write(msg.encode("utf-8"))
                 await writer.drain()
 
-                text = await self._read_until_prompt(reader, timeout=read_timeout)
-                return text
+                if not expect_response:
+                    return ""
+
+                data = await asyncio.wait_for(reader.read(4096), timeout=timeout)
+                return data.decode("utf-8", errors="ignore")
             finally:
-                writer.close()
-                with contextlib.suppress(Exception):
-                    await writer.wait_closed()
+                if writer is not None:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
 
-    async def switch_route(self, output: int, input_: int) -> None:
-        """Route Output -> Input."""
-        if output <= 0:
-            raise ValueError("output must be >= 1")
-        if input_ <= 0:
-            raise ValueError("input must be >= 1")
-        cmd = f"OUT {output:03d} FR {input_:03d}"
-        _LOGGER.debug("ACM200 send: %s", cmd)
-        await self._send_and_read(cmd, read_timeout=1.5)
+    async def switch_route(self, output_id: int, input_id: int) -> None:
+        """Route output_id to input_id."""
+        # Command may differ per device; adjust as needed.
+        # Format used here: "CIxxxOyyy" is placeholder for your working command.
+        cmd = f"SW {output_id} {input_id}"
+        await self._send_command(cmd, expect_response=False)
 
-    def _parse_routes(self, text: str) -> Dict[int, int]:
-        routes: Dict[int, int] = {}
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            for rx in ROUTE_RE_LIST:
-                m = rx.search(line)
-                if not m:
-                    continue
-                out_s, in_s = m.group(1), m.group(2)
-                try:
-                    out_id = int(out_s)
-                except ValueError:
-                    continue
-                # Ignore AUTO as a stable route value (we keep last numeric if present)
-                if in_s.upper() == "AUTO":
-                    continue
-                try:
-                    in_id = int(in_s)
-                except ValueError:
-                    continue
-                if out_id > 0 and in_id > 0:
-                    routes[out_id] = in_id
-        return routes
-
-    async def get_routes_bulk(self) -> Dict[int, int]:
-        """Try to fetch all routes in one go."""
-        # Try the most likely forms first.
-        for cmd in ("OUT 000 STATUS", "STATUS", "OUT000STATUS", "OUT000 STATUS"):
-            try:
-                text = await self._send_and_read(cmd, read_timeout=2.5)
-                routes = self._parse_routes(text)
-                if routes:
-                    _LOGGER.debug("ACM200 bulk routes via %s: %s", cmd, routes)
-                    return routes
-            except Exception as exc:
-                _LOGGER.debug("ACM200 bulk status failed (%s): %s", cmd, exc)
-
-        return {}
-
-    async def get_route_for_output(self, output: int) -> Optional[int]:
-        """Fetch a single output route; returns input id or None."""
-        if output <= 0:
-            return None
-        for cmd in (f"OUT {output:03d} STATUS", f"OUT{output:03d}STATUS"):
-            try:
-                text = await self._send_and_read(cmd, read_timeout=2.0)
-                routes = self._parse_routes(text)
-                if output in routes:
-                    return routes[output]
-            except Exception as exc:
-                _LOGGER.debug("ACM200 out status failed (%s): %s", cmd, exc)
-        return None
+    async def get_routing_status(self, num_outputs: int) -> Dict[int, int]:
+        """
+        Poll routing status for outputs 1..num_outputs.
+        This assumes the device supports a query per output.
+        """
+        result: Dict[int, int] = {}
+        for out_id in range(1, num_outputs + 1):
+            cmd = f"GET {out_id}"
+            resp = await self._send_command(cmd, expect_response=True)
+            # VERY device-specific parsing:
+            # Expect something like "OUT 001 IN 3"
+            in_id = _parse_input_id(resp)
+            if in_id is not None:
+                result[out_id] = in_id
+        return result
 
 
-# stdlib contextlib used above
-import contextlib  # noqa: E402
+def _parse_input_id(resp: str) -> Optional[int]:
+    # Basic parsing helper; tailor to your actual ACM200 response.
+    for token in resp.replace("\r", " ").replace("\n", " ").split():
+        if token.isdigit():
+            return int(token)
+    return None
