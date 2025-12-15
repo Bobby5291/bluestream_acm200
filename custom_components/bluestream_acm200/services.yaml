@@ -1,0 +1,31 @@
+switch_route:
+  name: Switch route
+  description: Route a matrix input to a matrix output on the Blustream ACM200.
+  fields:
+    output:
+      name: Output
+      description: Output number to route to (starting at 1).
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          step: 1
+          mode: box
+    input:
+      name: Input
+      description: Input number to route from (starting at 1).
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+          step: 1
+          mode: box
+    entry_id:
+      name: Config entry ID
+      description: Optional. If set, routes using that specific config entry; otherwise uses the first configured device.
+      required: false
+      example: "abcd1234efgh5678"
+      selector:
+        text: {}
