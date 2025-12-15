@@ -3,7 +3,7 @@
   "name": "Blustream ACM200",
   "version": "1.0.0",
   "documentation": "https://github.com/YOURNAME/bluestream_acm200",
-  "issue_tracker": "https://github.com/YOURNAME/bluestream_acm200/issues",
+  "issue_tracker": "https://github.com/Bobby5291/bluestream_acm200/issues",
   "codeowners": ["@Bobby5291"],
   "requirements": [],
   "dependencies": [],
