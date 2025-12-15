@@ -37,3 +37,4 @@ class ACM200Coordinator(DataUpdateCoordinator[Dict[int, int]]):
             return routing
         except Exception as err:
             raise UpdateFailed(f"Error updating ACM200 routing: {err}") from err
+
