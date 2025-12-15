@@ -11,8 +11,6 @@ The integration connects directly to the ACM200 over the local network and does 
 * Local network control of the Blustream ACM200 video matrix
 * Configuration via the Home Assistant UI (Config Flow)
 * Media Player entities for zone/output control
-* Sensor entities for device and zone status
-* Select entities for input and routing selection
 * No cloud dependency
 
 ---
@@ -56,12 +54,11 @@ The integration creates the following entity types:
 
 * Output / zone control
 * Input (source) selection
-* Power and routing control (where supported)
+
 
 ### Sensors
 
-* Device status information
-* Connection and zone-related state values
+*right now we can only Assume the state 
 
 ### Select
 
@@ -80,7 +77,7 @@ Home Assistant periodically queries the device to retrieve the current state.
 ## Requirements
 
 * A Blustream ACM200 accessible on the local network
-* Home Assistant 2023.1.0 or newer
+* Home Assistant 2025.12.0 or newer
 
 ---
 
