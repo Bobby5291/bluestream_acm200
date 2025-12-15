@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "documentation": "https://github.com/YOURNAME/bluestream_acm200",
   "issue_tracker": "https://github.com/YOURNAME/bluestream_acm200/issues",
-  "codeowners": ["@yourgithubusername"],
+  "codeowners": ["@Bobby5291"],
   "requirements": [],
   "dependencies": [],
   "config_flow": true,
