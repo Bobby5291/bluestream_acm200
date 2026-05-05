@@ -128,6 +128,7 @@ class ACM200OutputSelect(
         self._attr_options = labels
 
         self._optimistic_option: Optional[str] = None
+        self._last_option: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Coordinator updates
@@ -136,10 +137,24 @@ class ACM200OutputSelect(
     @callback
     def _handle_coordinator_update(self) -> None:
         data: ACM200Data = self.coordinator.data
-        if data and self._optimistic_option:
+        if data is None:
+            return
+
+        new_option = None
+        if self._optimistic_option:
             confirmed = data.input_for(self._output_id)
             if confirmed == self._label_to_input.get(self._optimistic_option):
                 self._optimistic_option = None
+            new_option = self._optimistic_option
+        else:
+            in_id = data.input_for(self._output_id)
+            new_option = self._input_to_label.get(in_id) if in_id is not None else None
+
+        # Only push a state update if something actually changed
+        if new_option == self._last_option:
+            return
+
+        self._last_option = new_option
         self.async_write_ha_state()
 
     @property
