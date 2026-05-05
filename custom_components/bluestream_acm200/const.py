@@ -20,3 +20,7 @@ DEFAULT_NUM_OUTPUTS = 9
 DEFAULT_POLL_INTERVAL = 5  # seconds
 
 PLATFORMS = ["select", "media_player", "sensor"]
+
+# Discovery
+ZEROCONF_TYPE = "_telnet._tcp.local."
+MDNS_NAME_FRAGMENT = "acm200"
