@@ -5,27 +5,28 @@ from typing import Dict, List, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .client import ACM200Client
 from .const import (
-    DOMAIN,
+    CONF_INPUT_NAMES,
     CONF_NUM_INPUTS,
     CONF_NUM_OUTPUTS,
+    CONF_OUTPUT_NAMES,
     DEFAULT_NUM_INPUTS,
     DEFAULT_NUM_OUTPUTS,
-    CONF_INPUT_NAMES,
-    CONF_OUTPUT_NAMES,
+    DOMAIN,
 )
+from .coordinator import ACM200Coordinator, ACM200Data
 from . import get_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _make_unique_labels(labels: List[str]) -> List[str]:
-    """Ensure options are unique strings (HA Select requires unique options)."""
     seen: Dict[str, int] = {}
     out: List[str] = []
     for label in labels:
@@ -45,6 +46,7 @@ async def async_setup_entry(
 ) -> None:
     domain_data = hass.data[DOMAIN]
     client: ACM200Client = domain_data["clients"][entry.entry_id]
+    coordinator: ACM200Coordinator = domain_data["coordinators"][entry.entry_id]
 
     num_inputs: int = int(entry.data.get(CONF_NUM_INPUTS, DEFAULT_NUM_INPUTS))
     num_outputs: int = int(entry.data.get(CONF_NUM_OUTPUTS, DEFAULT_NUM_OUTPUTS))
@@ -52,29 +54,38 @@ async def async_setup_entry(
     input_names: Dict[str, str] = dict(entry.options.get(CONF_INPUT_NAMES, {}))
     output_names: Dict[str, str] = dict(entry.options.get(CONF_OUTPUT_NAMES, {}))
 
-    entities: List[ACM200OutputSelect] = []
-    for out_id in range(1, num_outputs + 1):
-        entities.append(
-            ACM200OutputSelect(
-                client=client,
-                entry=entry,
-                output_id=out_id,
-                num_inputs=num_inputs,
-                input_names=input_names,
-                output_names=output_names,
-            )
+    entities: List[ACM200OutputSelect] = [
+        ACM200OutputSelect(
+            coordinator=coordinator,
+            client=client,
+            entry=entry,
+            output_id=out_id,
+            num_inputs=num_inputs,
+            input_names=input_names,
+            output_names=output_names,
         )
+        for out_id in range(1, num_outputs + 1)
+    ]
 
     async_add_entities(entities)
 
 
-class ACM200OutputSelect(SelectEntity, RestoreEntity):
-    """Select entity representing the source for a given output (RX)."""
+class ACM200OutputSelect(
+    CoordinatorEntity[ACM200Coordinator], SelectEntity, RestoreEntity
+):
+    """Select entity for choosing the source routed to one ACM200 output.
+
+    Reflects the coordinator's live routing data.  An optimistic current_option
+    is applied immediately after a user action so the UI feels responsive, and
+    is cleared once the coordinator confirms the change.
+    """
 
     _attr_should_poll = False
+    _attr_icon = "mdi:video-input-hdmi"
 
     def __init__(
         self,
+        coordinator: ACM200Coordinator,
         client: ACM200Client,
         entry: ConfigEntry,
         output_id: int,
@@ -82,73 +93,93 @@ class ACM200OutputSelect(SelectEntity, RestoreEntity):
         input_names: Dict[str, str],
         output_names: Dict[str, str],
     ) -> None:
+        super().__init__(coordinator)
         self._client = client
         self._entry = entry
         self._output_id = output_id
-        self._num_inputs = num_inputs
 
         dev_key = entry.unique_id or entry.entry_id
         self._attr_device_info = get_device_info(entry)
 
         out_friendly = (output_names.get(str(output_id)) or "").strip()
-        if out_friendly:
-            self._attr_name = f"{out_friendly} Source"
-        else:
-            self._attr_name = f"ACM200 Output {output_id:03d} Source"
-
+        self._attr_name = (
+            f"{out_friendly} Source" if out_friendly else f"ACM200 Output {output_id:03d} Source"
+        )
         self._attr_unique_id = f"{dev_key}_output_{output_id:03d}_source"
-        self._attr_icon = "mdi:video-input-hdmi"
 
-        # Build options labels from input names
         raw_labels: List[str] = []
-        self._inputs: Dict[str, int] = {}
-
         for in_id in range(1, num_inputs + 1):
             friendly = (input_names.get(str(in_id)) or "").strip()
-            label = friendly if friendly else f"Input {in_id}"
-            raw_labels.append(label)
+            raw_labels.append(friendly or f"Input {in_id}")
 
-        # Ensure uniqueness (in case two inputs were given the same friendly name)
         labels = _make_unique_labels(raw_labels)
-
-        # Map label -> input id (preserving order)
-        for idx, label in enumerate(labels, start=1):
-            self._inputs[label] = idx
-
+        self._label_to_input: Dict[str, int] = {
+            label: idx for idx, label in enumerate(labels, start=1)
+        }
+        self._input_to_label: Dict[int, str] = {
+            idx: label for label, idx in self._label_to_input.items()
+        }
         self._attr_options = labels
-        self._attr_current_option: Optional[str] = None
 
-    async def async_added_to_hass(self) -> None:
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            if last_state.state in self._attr_options:
-                self._attr_current_option = last_state.state
-                _LOGGER.debug(
-                    "ACM200: restored %s to option %s",
-                    self._attr_unique_id,
-                    self._attr_current_option,
-                )
+        self._optimistic_option: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Coordinator updates
+    # ------------------------------------------------------------------
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        data: ACM200Data = self.coordinator.data
+        if data and self._optimistic_option:
+            confirmed = data.input_for(self._output_id)
+            if confirmed == self._label_to_input.get(self._optimistic_option):
+                self._optimistic_option = None
+        self.async_write_ha_state()
 
     @property
     def current_option(self) -> Optional[str]:
-        return self._attr_current_option
+        if self._optimistic_option:
+            return self._optimistic_option
+        data: ACM200Data | None = self.coordinator.data
+        if data is None:
+            return None
+        in_id = data.input_for(self._output_id)
+        return self._input_to_label.get(in_id) if in_id is not None else None
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    # ------------------------------------------------------------------
+    # Restore
+    # ------------------------------------------------------------------
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state and self.coordinator.data is None:
+            if last_state.state in self._attr_options:
+                self._optimistic_option = last_state.state
+
+    # ------------------------------------------------------------------
+    # User action
+    # ------------------------------------------------------------------
 
     async def async_select_option(self, option: str) -> None:
-        if option not in self._inputs:
-            _LOGGER.error("ACM200: unknown option %s for %s", option, self._attr_unique_id)
+        if option not in self._label_to_input:
+            _LOGGER.error(
+                "ACM200: unknown option %s for %s", option, self._attr_unique_id
+            )
             return
 
-        in_id = self._inputs[option]
-        out_id = self._output_id
-
+        in_id = self._label_to_input[option]
         _LOGGER.info(
-            "ACM200: routing output %03d from %s (input %d)",
-            out_id,
-            option,
+            "ACM200: routing output %03d → input %d (%s)",
+            self._output_id,
             in_id,
+            option,
         )
+        await self._client.switch_route(self._output_id, in_id)
 
-        await self._client.switch_route(out_id, in_id)
-
-        self._attr_current_option = option
+        self._optimistic_option = option
         self.async_write_ha_state()
