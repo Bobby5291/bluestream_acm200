@@ -98,6 +98,12 @@ class ACM200OutputSelect(
         self._entry = entry
         self._output_id = output_id
 
+        # Disabled by default; enabled automatically if output is online at first poll
+        data = coordinator.data
+        self._attr_entity_registry_enabled_default = (
+            data.is_output_online(output_id) if data is not None else False
+        )
+
         dev_key = entry.unique_id or entry.entry_id
         self._attr_device_info = get_device_info(entry)
 
