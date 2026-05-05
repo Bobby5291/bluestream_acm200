@@ -3,8 +3,8 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![hassfest](https://github.com/Bobby5291/blustream_acm/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/Bobby5291/blustream_acm/actions/workflows/hassfest.yaml)
 [![HACS validation](https://github.com/Bobby5291/blustream_acm/actions/workflows/validate.yml/badge.svg)](https://github.com/Bobby5291/blustream_acm/actions/workflows/validate.yml)
-[![GitHub Stars](https://img.shields.io/github/stars/Bobby5291/blustream_acm?style=flat&color=yellow)](https://github.com/Bobby5291/blustream_acm/stargazers)
-[![HACS Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.hacs.xyz%2Fdata%2Fintegration%2Fbluestream_acm.json&query=%24.total&label=Downloads&color=blue)](https://hacs.xyz)
+[![GitHub Stars](https://img.shields.io/github/stars/Bobby5291/blustream_acm?style=flat&logo=github&color=yellow&label=Stars)](https://github.com/Bobby5291/blustream_acm/stargazers)
+[![GitHub Downloads](https://img.shields.io/github/downloads/Bobby5291/blustream_acm/total?style=flat&logo=github&label=Downloads)](https://github.com/Bobby5291/blustream_acm/releases)
 
 A Home Assistant custom integration for the **Blustream ACM200 video matrix**.
 
