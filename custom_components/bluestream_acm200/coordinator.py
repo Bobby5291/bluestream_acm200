@@ -51,8 +51,7 @@ class ACM200Coordinator(DataUpdateCoordinator[ACM200Data]):
 
     async def _async_update_data(self) -> ACM200Data:
         try:
-            routing = await self._client.get_routing_status(self._num_outputs)
-            online = await self._client.discover_online_outputs(self._num_outputs)
+            routing, online = await self._client.get_full_status(self._num_outputs)
             return ACM200Data(routing=routing, online_outputs=online)
         except Exception as err:
             raise UpdateFailed(f"ACM200 poll failed: {err}") from err
