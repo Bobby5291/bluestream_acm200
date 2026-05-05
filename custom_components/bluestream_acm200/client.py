@@ -202,10 +202,7 @@ class ACM200Client:
         return names
 
     async def discover_online_outputs(self, num_outputs: int) -> List[int]:
-        """
-        Return a list of output IDs that appear to have an active/connected device.
-        We look for an "online", "connected", or "active" flag in the STATUS reply.
-        """
+        """Return list of output IDs whose Net column reports On (RX on the network)."""
         online: List[int] = []
         for out_id in range(1, num_outputs + 1):
             try:
@@ -216,104 +213,185 @@ class ACM200Client:
                 pass
         return online
 
+    async def get_full_status(self, num_outputs: int) -> Tuple[Dict[int, int], List[int]]:
+        """
+        Single-pass poll: one OUT ooo STATUS call per output returns both
+        the routing table and the online list — half the round-trips vs two separate calls.
+        """
+        routing: Dict[int, int] = {}
+        online: List[int] = []
+        for out_id in range(1, num_outputs + 1):
+            try:
+                resp = await self.get_output_status(out_id)
+                in_id = _parse_routed_input(resp)
+                if in_id is not None:
+                    routing[out_id] = in_id
+                if _parse_output_online(resp):
+                    online.append(out_id)
+            except Exception as exc:
+                _LOGGER.debug("ACM200: could not poll output %d: %s", out_id, exc)
+        return routing, online
+
 
 # ---------------------------------------------------------------------------
-# Response parsers
+# Response parsers — tuned for ACM200 FW 1.31 fixed-width table format
+# ---------------------------------------------------------------------------
+#
+# OUT STATUS header line format (FW 1.31):
+#   Out   Net    HPD   Ver     Mode   Res   Rotate  Name
+#   001   Off    Off   A7.3.0  MX     00    0       RX 1 Lounge
+#
+# The data line immediately below has the routing info:
+#   >>Fast   Fr    Vid/Aud/IR_/Ser/USB/CEC      HDR   MCast
+#     On     001   000/000/000/000/000/000      On    On
+#
+# IN STATUS header line format (FW 1.31):
+#   In    Net    Sig   Ver     EDID   Aud   MCast   Name
+#   001   On     Off   A7.3.0  DF015  HDMI  On      TX 1 SKY
 # ---------------------------------------------------------------------------
 
 def _parse_routed_input(resp: str) -> Optional[int]:
     """
-    Parse routed input from an OUT ooo STATUS response.
+    Parse the currently routed input from an OUT ooo STATUS response.
 
-    Handles several known firmware variants:
-    - "From Input: 003"
-    - "FR 003"
-    - "Input 003" / "Input: 003"
-    - "Routed to Input 2"
+    FW 1.31 puts this in the '>>Fast / Fr' data row:
+        >>Fast   Fr    ...
+          On     001   ...
+    We find the '>>Fast' marker line, then read 'Fr' value from the next
+    data line by column position.
     """
-    text = resp.replace("\r", "\n")
-    patterns = [
-        r"\bFrom\s+Input\s*[:=]\s*(\d{1,3})\b",
-        r"\bRouted\s+(?:to\s+)?Input\s*[:=]?\s*(\d{1,3})\b",
-        r"\bFR\s+(\d{1,3})\b",
-        r"\bInput\s*[:=]\s*(\d{1,3})\b",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if m:
-            try:
-                return int(m.group(1))
-            except ValueError:
-                continue
+    lines = resp.replace("\r", "").splitlines()
+
+    # Strategy 1: find the header ">>Fast  Fr" and read the value line below
+    for i, line in enumerate(lines):
+        if re.search(r">>\s*Fast", line, flags=re.IGNORECASE):
+            # Find column position of "Fr" in this header line
+            m_hdr = re.search(r"\bFr\b", line)
+            if m_hdr and i + 1 < len(lines):
+                col = m_hdr.start()
+                val_line = lines[i + 1]
+                # Extract the token at that column (allow ±4 chars slop)
+                segment = val_line[max(0, col - 2): col + 8].strip()
+                tok = segment.split()[0] if segment.split() else ""
+                try:
+                    return int(tok)
+                except ValueError:
+                    pass
+
+    # Strategy 2: fallback — any bare 3-digit number after "Fr" anywhere
+    m = re.search(r"\bFr\b\s+(\d{1,3})\b", resp, flags=re.IGNORECASE)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+
     return None
 
 
 def _parse_name(resp: str) -> Optional[str]:
     """
-    Extract a friendly name from an IN iii STATUS or OUT ooo STATUS response.
+    Extract the friendly name from an IN iii STATUS or OUT ooo STATUS response.
 
-    Common firmware formats:
-    - "Name: Living Room TV"
-    - "Label: AppleTV"
-    - "Input Name: Blu-ray"
-    - "Output Name: Bedroom"
+    FW 1.31 puts the name as the last column on the device data row:
+        Out   Net    HPD   Ver     Mode   Res   Rotate  Name
+        001   Off    Off   A7.3.0  MX     00    0       RX 1 Lounge
+
+        In    Net    Sig   Ver     EDID   Aud   MCast   Name
+        001   On     Off   A7.3.0  DF015  HDMI  On      TX 1 SKY
+
+    We find the 'Name' column header, note its character position, then
+    read the same offset on the very next non-empty line.
     """
-    text = resp.replace("\r", "\n")
-    patterns = [
-        r"\b(?:Output\s+)?Name\s*[:=]\s*(.+)",
-        r"\b(?:Input\s+)?Name\s*[:=]\s*(.+)",
-        r"\bLabel\s*[:=]\s*(.+)",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if m:
-            name = m.group(1).strip().strip('"').strip("'")
-            # Reject placeholder / empty names the firmware sometimes returns
-            if name and name.lower() not in {"", "n/a", "none", "unknown", "input", "output"}:
-                return name
+    lines = resp.replace("\r", "").splitlines()
+
+    for i, line in enumerate(lines):
+        # Look for the column-header line that contains "Name" as last header
+        if re.search(r"\bName\s*$", line.rstrip()):
+            col = line.rstrip().rfind("Name")
+            # Find the next non-empty line — that's the data row
+            for j in range(i + 1, len(lines)):
+                data = lines[j]
+                if data.strip() and not data.strip().startswith("="):
+                    name = data[col:].strip() if len(data) > col else ""
+                    name = name.strip('"').strip("'")
+                    if name and name.lower() not in {
+                        "", "n/a", "none", "unknown", "input", "output", "name"
+                    }:
+                        return name
+                    break
+
     return None
 
 
-def _parse_matrix_size(resp: str) -> Tuple[int, int]:
+def _parse_output_net(resp: str) -> Optional[str]:
     """
-    Parse input/output count from a MATRIX STATUS response.
+    Return the raw 'Net' column value for an output ('On' or 'Off').
 
-    Looks for lines like:
-    - "Inputs: 4"  /  "Outputs: 9"
-    - "4 Inputs"  /  "9 Outputs"
+    FW 1.31 output data row:
+        Out   Net    HPD   ...
+        001   Off    Off   ...
     """
-    text = resp.replace("\r", "\n")
-    num_in = num_out = 0
+    lines = resp.replace("\r", "").splitlines()
 
-    m = re.search(r"\bInputs?\s*[:=]\s*(\d+)\b", text, flags=re.IGNORECASE)
-    if m:
-        num_in = int(m.group(1))
+    for i, line in enumerate(lines):
+        if re.search(r"\bOut\b.*\bNet\b", line, flags=re.IGNORECASE):
+            # Find column position of "Net"
+            m_hdr = re.search(r"\bNet\b", line)
+            if m_hdr and i + 1 < len(lines):
+                col = m_hdr.start()
+                data_line = lines[i + 1]
+                segment = data_line[max(0, col - 1): col + 6].strip()
+                tok = segment.split()[0] if segment.split() else ""
+                return tok  # "On" or "Off"
+    return None
 
-    m = re.search(r"\bOutputs?\s*[:=]\s*(\d+)\b", text, flags=re.IGNORECASE)
-    if m:
-        num_out = int(m.group(1))
 
-    # Alternate: "4 x 9" or "4x9" matrix descriptor
-    if not (num_in and num_out):
-        m = re.search(r"\b(\d+)\s*[xX×]\s*(\d+)\b", text)
-        if m:
-            num_in, num_out = int(m.group(1)), int(m.group(2))
+def _parse_input_net(resp: str) -> Optional[str]:
+    """
+    Return the raw 'Net' column value for an input ('On' or 'Off').
 
-    return num_in, num_out
+    FW 1.31 input data row:
+        In    Net    Sig   ...
+        001   On     Off   ...
+    """
+    lines = resp.replace("\r", "").splitlines()
+
+    for i, line in enumerate(lines):
+        if re.search(r"\bIn\b.*\bNet\b", line, flags=re.IGNORECASE):
+            m_hdr = re.search(r"\bNet\b", line)
+            if m_hdr and i + 1 < len(lines):
+                col = m_hdr.start()
+                data_line = lines[i + 1]
+                segment = data_line[max(0, col - 1): col + 6].strip()
+                tok = segment.split()[0] if segment.split() else ""
+                return tok
+    return None
 
 
 def _parse_output_online(resp: str) -> bool:
     """
-    Return True if the STATUS response indicates the output has an active sink.
-
-    Looks for positive keywords; absence of response or explicit offline
-    keywords returns False.
+    Return True if the output's 'Net' column reports 'On' (RX is on the network).
     """
-    if not resp.strip():
-        return False
-    text = resp.lower()
-    online_markers = ["online", "connected", "active", "link up", "hdmi lock", "locked"]
-    offline_markers = ["offline", "disconnected", "no device", "no sink", "no signal", "link down"]
-    if any(m in text for m in offline_markers):
-        return False
-    return any(m in text for m in online_markers)
+    net = _parse_output_net(resp)
+    if net is not None:
+        return net.lower() == "on"
+    # Fallback: no parseable response → treat as offline
+    return False
+
+
+def _parse_matrix_size(resp: str) -> Tuple[int, int]:
+    """Not used on FW 1.31 (MATRIX STATUS returns [ERROR]). Kept for future firmware."""
+    text = resp.replace("\r", "\n")
+    num_in = num_out = 0
+    m = re.search(r"\bInputs?\s*[:=]\s*(\d+)\b", text, flags=re.IGNORECASE)
+    if m:
+        num_in = int(m.group(1))
+    m = re.search(r"\bOutputs?\s*[:=]\s*(\d+)\b", text, flags=re.IGNORECASE)
+    if m:
+        num_out = int(m.group(1))
+    if not (num_in and num_out):
+        m = re.search(r"\b(\d+)\s*[xX×]\s*(\d+)\b", text)
+        if m:
+            num_in, num_out = int(m.group(1)), int(m.group(2))
+    return num_in, num_out
