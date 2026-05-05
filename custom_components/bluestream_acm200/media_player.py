@@ -131,6 +131,8 @@ class ACM200OutputMediaPlayer(
 
         # Optimistic source used between poll cycles after a user action
         self._optimistic_source: Optional[str] = None
+        self._last_source: Optional[str] = None
+        self._last_online: bool = False
 
     # ------------------------------------------------------------------
     # Coordinator-driven state
@@ -138,12 +140,28 @@ class ACM200OutputMediaPlayer(
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        # Clear the optimistic override once the coordinator confirms the change
         data: ACM200Data = self.coordinator.data
-        if data and self._optimistic_source:
+        if data is None:
+            return
+
+        new_source = None
+        if self._optimistic_source:
             confirmed_in = data.input_for(self._output_id)
             if confirmed_in == self._source_to_input.get(self._optimistic_source):
                 self._optimistic_source = None
+            new_source = self._optimistic_source
+        else:
+            in_id = data.input_for(self._output_id)
+            new_source = self._input_to_source.get(in_id) if in_id is not None else None
+
+        new_online = data.is_output_online(self._output_id)
+
+        # Only push a state update if something actually changed
+        if new_source == self._last_source and new_online == self._last_online:
+            return
+
+        self._last_source = new_source
+        self._last_online = new_online
         self.async_write_ha_state()
 
     @property
