@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Blustream ACM200",
+        "description": "Enter the network address of your ACM200. The integration will attempt to auto-discover the matrix size and port/output names directly from the device.",
+        "data": {
+          "host": "Host / IP address",
+          "port": "Telnet port (default 23)",
+          "num_inputs": "Number of inputs (fallback if auto-detect fails)",
+          "num_outputs": "Number of outputs (fallback if auto-detect fails)",
+          "poll_interval": "Poll interval (seconds)"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Blustream ACM200 found",
+        "description": "A Blustream ACM200 was discovered at **{host}** (port {port}).\n\nPress **Submit** to connect and auto-discover its configuration."
+      },
+      "names": {
+        "title": "Input & output names",
+        "description": "These names were read from the device. Edit them if you'd like to use different labels in Home Assistant. Leave a field blank to keep the default label.",
+        "data_description": {
+          "in_1": "Input 1 name",
+          "out_1": "Output 1 name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This ACM200 is already configured.",
+      "not_acm200": "Discovered device is not an ACM200.",
+      "cannot_connect": "Unable to connect — check the host and port."
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the ACM200. Check the host address and ensure the device is reachable on the network."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit input & output names",
+        "description": "Update the friendly names shown in Home Assistant for each input and output."
+      }
+    }
+  }
+}
