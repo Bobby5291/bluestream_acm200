@@ -1,8 +1,10 @@
-# Blustream ACM200
+# Blustream ACM
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
-[![hassfest](https://github.com/Bobby5291/bluestream_acm200/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/Bobby5291/bluestream_acm200/actions/workflows/hassfest.yaml)
-[![HACS validation](https://github.com/Bobby5291/bluestream_acm200/actions/workflows/validate.yml/badge.svg)](https://github.com/Bobby5291/bluestream_acm200/actions/workflows/validate.yml)
+[![hassfest](https://github.com/Bobby5291/blustream_acm/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/Bobby5291/blustream_acm/actions/workflows/hassfest.yaml)
+[![HACS validation](https://github.com/Bobby5291/blustream_acm/actions/workflows/validate.yml/badge.svg)](https://github.com/Bobby5291/blustream_acm/actions/workflows/validate.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/Bobby5291/blustream_acm?style=flat&color=yellow)](https://github.com/Bobby5291/blustream_acm/stargazers)
+[![HACS Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.hacs.xyz%2Fdata%2Fintegration%2Fbluestream_acm.json&query=%24.total&label=Downloads&color=blue)](https://hacs.xyz)
 
 A Home Assistant custom integration for the **Blustream ACM200 video matrix**.
 
@@ -14,7 +16,7 @@ Connects directly over the local network — no cloud, no relay.
 
 | Feature | Detail |
 |---|---|
-| **Auto-discovery** | Finds ACM200 devices on your network via mDNS (zeroconf) |
+| **Auto-discovery** | Finds ACM200 / ACM210 devices on your network via mDNS (zeroconf) |
 | **Auto-detects matrix size** | Queries the device to find how many inputs and outputs it has |
 | **Auto-imports names** | Reads input/output labels stored on the device — no manual entry needed |
 | **Online/offline detection** | Each output shows ON/OFF state based on whether a sink is connected |
@@ -33,7 +35,7 @@ Connects directly over the local network — no cloud, no relay.
 
 1. Open **HACS → Integrations**
 2. Click the three-dot menu → **Custom repositories**
-3. Add `https://github.com/Bobby5291/bluestream_acm200` — category **Integration**
+3. Add `https://github.com/Bobby5291/blustream_acm` — category **Integration**
 4. Install **Blustream ACM200**
 5. Restart Home Assistant
 
