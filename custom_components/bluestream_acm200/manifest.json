@@ -1,15 +1,16 @@
 {
   "domain": "bluestream_acm200",
-  "name": "Blustream ACM200",
+  "name": "Blustream ACM",
   "codeowners": ["@Bobby5291"],
   "config_flow": true,
-  "documentation": "https://github.com/Bobby5291/bluestream_acm200",
+  "documentation": "https://github.com/Bobby5291/blustream_acm",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/Bobby5291/bluestream_acm200/issues",
+  "issue_tracker": "https://github.com/Bobby5291/blustream_acm/issues",
   "requirements": [],
   "version": "1.1.0",
   "zeroconf": [
-    {"type": "_telnet._tcp.local.", "name": "*acm200*"}
+    {"type": "_telnet._tcp.local.", "name": "*acm200*"},
+    {"type": "_telnet._tcp.local.", "name": "*acm210*"}
   ]
 }
